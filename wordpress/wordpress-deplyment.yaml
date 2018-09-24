@@ -30,7 +30,7 @@ spec:
         app: wordpress
         tier: frontend
     spec:
-      serviceAccountName: build-robot
+      serviceAccountName: consul-k8s-sa
       containers:
       - name: consul
         image: kodosan/consul:1.2.3
