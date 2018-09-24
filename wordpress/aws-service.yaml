@@ -1,0 +1,18 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: <ACMで作成した証明書のARN>
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+    service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+spec:
+  type: LoadBalancer
+  selector:
+    app: wordpress
+  ports:
+  - protocol: TCP
+    port: 443
+    targetPort: 80

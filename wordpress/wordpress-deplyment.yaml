@@ -1,0 +1,115 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-pv-claim
+  labels:
+    app: wordpress
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  selector:
+    matchLabels:
+      app: wordpress
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wordpress
+        tier: frontend
+    spec:
+      serviceAccountName: build-robot
+      containers:
+      - name: consul
+        image: kodosan/consul:1.2.3
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        command:
+          - "/bin/sh"
+          - "-ec"
+          - |
+            exec /bin/consul agent \
+              -advertise="${POD_IP}" \
+              -client=0.0.0.0 \
+              -config-dir=/consul/config \
+              -data-dir=/consul/data \
+              -ui \
+              -rejoin \
+              -retry-join="provider=k8s label_selector=\"app=consul,component=server\"" \
+        lifecycle:             
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - consul leave              
+        volumeMounts:
+        - name: data
+          mountPath: /consul/data
+        - name: config
+          mountPath: /consul/config        
+      - image: wordpress:4.9.8-apache
+        name: wordpress
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: 127.0.0.1
+        - name: WORDPRESS_DB_PASSWORD
+          value: pass
+        ports:
+        - containerPort: 80
+          name: wordpress
+        volumeMounts:
+        - name: wordpress-persistent-storage
+          mountPath: /var/www/html
+      volumes:
+      - name: wordpress-persistent-storage
+        persistentVolumeClaim:
+          claimName: wp-pv-claim
+      - name: data
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: consul-config-wordpress       
+    
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consul-config-wordpress
+data:
+  web.hcl: |
+    connect {
+       enabled = true
+    }
+    "services" = {
+      "name" = "wordpress"
+      "port" = 80
+      "tags" = ["wordpress"]
+      "connect" = {
+        "proxy" = {
+          "config" = {
+              upstreams {
+                "destination_name" = "mysql"
+                "local_bind_port" = 3306
+              }
+          }
+        } 
+      }
+    }
